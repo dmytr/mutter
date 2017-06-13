@@ -1,0 +1,2067 @@
+From 0f5ac1dc2832adb55dff7f507b750365d80e0b1d Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20=C3=85dahl?= <jadahl@gmail.com>
+Date: Fri, 28 Apr 2017 15:31:03 +0800
+Subject: [PATCH 01/19] monitor: Fix naming of spec generation function
+
+It was at one point referred to as 'id', but was changed to 'spec', but
+the name of this function was not updated.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=781723
+---
+ src/backends/meta-monitor.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/src/backends/meta-monitor.c b/src/backends/meta-monitor.c
+index f6eb227..3d5e0e4 100644
+--- a/src/backends/meta-monitor.c
++++ b/src/backends/meta-monitor.c
+@@ -135,7 +135,7 @@ meta_monitor_spec_free (MetaMonitorSpec *monitor_spec)
+ }
+ 
+ static void
+-meta_monitor_generate_id (MetaMonitor *monitor)
++meta_monitor_generate_spec (MetaMonitor *monitor)
+ {
+   MetaMonitorPrivate *priv = meta_monitor_get_instance_private (monitor);
+   MetaOutput *output = meta_monitor_get_main_output (monitor);
+@@ -358,7 +358,7 @@ meta_monitor_normal_new (MetaOutput *output)
+   monitor_priv->winsys_id = output->winsys_id;
+ 
+   meta_monitor_normal_generate_modes (monitor_normal);
+-  meta_monitor_generate_id (monitor);
++  meta_monitor_generate_spec (monitor);
+ 
+   return monitor_normal;
+ }
+@@ -681,7 +681,7 @@ meta_monitor_tiled_new (MetaMonitorManager *monitor_manager,
+                                             META_MONITOR (monitor_tiled));
+ 
+   meta_monitor_tiled_generate_modes (monitor_tiled);
+-  meta_monitor_generate_id (monitor);
++  meta_monitor_generate_spec (monitor);
+ 
+   return monitor_tiled;
+ }
+-- 
+2.9.3
+
+From 317517fcb52c9a9fee375c4e81eeac0be11e7d46 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20=C3=85dahl?= <jadahl@gmail.com>
+Date: Fri, 28 Apr 2017 15:34:27 +0800
+Subject: [PATCH 02/19] monitor: Generate spec struct earlier
+
+By generating the spec struct earlier, code executed later can use the
+fields in the spec.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=781723
+---
+ src/backends/meta-monitor.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/src/backends/meta-monitor.c b/src/backends/meta-monitor.c
+index 3d5e0e4..47729a8 100644
+--- a/src/backends/meta-monitor.c
++++ b/src/backends/meta-monitor.c
+@@ -356,9 +356,9 @@ meta_monitor_normal_new (MetaOutput *output)
+ 
+   monitor_priv->outputs = g_list_append (NULL, output);
+   monitor_priv->winsys_id = output->winsys_id;
++  meta_monitor_generate_spec (monitor);
+ 
+   meta_monitor_normal_generate_modes (monitor_normal);
+-  meta_monitor_generate_spec (monitor);
+ 
+   return monitor_normal;
+ }
+@@ -677,11 +677,12 @@ meta_monitor_tiled_new (MetaMonitorManager *monitor_manager,
+   monitor_tiled->main_output = output;
+   add_tiled_monitor_outputs (monitor_manager, monitor_tiled);
+ 
++  meta_monitor_generate_spec (monitor);
++
+   meta_monitor_manager_tiled_monitor_added (monitor_manager,
+                                             META_MONITOR (monitor_tiled));
+ 
+   meta_monitor_tiled_generate_modes (monitor_tiled);
+-  meta_monitor_generate_spec (monitor);
+ 
+   return monitor_tiled;
+ }
+-- 
+2.9.3
+
+From a6678a262c3a4a7530f6198cace6a38a3183efb3 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20=C3=85dahl?= <jadahl@gmail.com>
+Date: Fri, 28 Apr 2017 15:36:51 +0800
+Subject: [PATCH 03/19] monitor: Move tiled CRTC mode identification into
+ helper
+
+It'll be used in more places later.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=781723
+---
+ src/backends/meta-monitor.c | 15 +++++++++------
+ 1 file changed, 9 insertions(+), 6 deletions(-)
+
+diff --git a/src/backends/meta-monitor.c b/src/backends/meta-monitor.c
+index 47729a8..299fef6 100644
+--- a/src/backends/meta-monitor.c
++++ b/src/backends/meta-monitor.c
+@@ -523,6 +523,14 @@ is_monitor_mode_assigned (MetaMonitor     *monitor,
+   return TRUE;
+ }
+ 
++static gboolean
++is_crtc_mode_tiled (MetaOutput   *output,
++                    MetaCrtcMode *crtc_mode)
++{
++  return (crtc_mode->width == (int) output->tile_info.tile_w &&
++          crtc_mode->height == (int) output->tile_info.tile_h);
++}
++
+ static MetaMonitorMode *
+ create_tiled_monitor_mode (MetaMonitorTiled *monitor_tiled)
+ {
+@@ -577,12 +585,7 @@ create_untiled_monitor_mode (MetaMonitorTiled *monitor_tiled,
+   GList *l;
+   int i;
+ 
+-  /*
+-   * Assume modes with a resolution identical to the tile sizes are tiled
+-   * modes.
+-   */
+-  if (crtc_mode->width == (int) main_output->tile_info.tile_w &&
+-      crtc_mode->height == (int) main_output->tile_info.tile_h)
++  if (is_crtc_mode_tiled (main_output, crtc_mode))
+     return NULL;
+ 
+   mode = g_new0 (MetaMonitorMode, 1);
+-- 
+2.9.3
+
+From d8adfa9a3198ff5fd5664fbf4586b0f9504abdaf Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20=C3=85dahl?= <jadahl@gmail.com>
+Date: Mon, 1 May 2017 11:55:10 +0800
+Subject: [PATCH 04/19] monitor: Move get_suggested() behind behind vfunc
+
+Only support suggested monitor positioning if the monitor is non-tiled.
+Normally this functionality is used by virtual machines to provide a
+hint of how to place the virtual monitors, and they don't tend to use
+tiled monitors anyway.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=781723
+---
+ src/backends/meta-monitor.c | 39 +++++++++++++++++++++++++++++----------
+ src/backends/meta-monitor.h |  3 +++
+ 2 files changed, 32 insertions(+), 10 deletions(-)
+
+diff --git a/src/backends/meta-monitor.c b/src/backends/meta-monitor.c
+index 299fef6..279e5f3 100644
+--- a/src/backends/meta-monitor.c
++++ b/src/backends/meta-monitor.c
+@@ -384,6 +384,23 @@ meta_monitor_normal_derive_dimensions (MetaMonitor   *monitor,
+   *height = output->crtc->rect.height;
+ }
+ 
++static gboolean
++meta_monitor_normal_get_suggested_position (MetaMonitor *monitor,
++                                            int         *x,
++                                            int         *y)
++{
++  MetaOutput *output;
++
++  output = meta_monitor_get_main_output (monitor);
++  if (output->suggested_x < 0 && output->suggested_y < 0)
++    return FALSE;
++
++  *x = output->suggested_x;
++  *y = output->suggested_y;
++
++  return TRUE;
++}
++
+ static void
+ meta_monitor_normal_init (MetaMonitorNormal *monitor)
+ {
+@@ -396,6 +413,7 @@ meta_monitor_normal_class_init (MetaMonitorNormalClass *klass)
+ 
+   monitor_class->get_main_output = meta_monitor_normal_get_main_output;
+   monitor_class->derive_dimensions = meta_monitor_normal_derive_dimensions;
++  monitor_class->get_suggested_position = meta_monitor_normal_get_suggested_position;
+ }
+ 
+ uint32_t
+@@ -409,16 +427,8 @@ meta_monitor_get_suggested_position (MetaMonitor *monitor,
+                                      int         *x,
+                                      int         *y)
+ {
+-  MetaOutput *main_output;
+-
+-  main_output = meta_monitor_get_main_output (monitor);
+-  if (main_output->suggested_x < 0 && main_output->suggested_y < 0)
+-    return FALSE;
+-
+-  *x = main_output->suggested_x;
+-  *y = main_output->suggested_y;
+-
+-  return TRUE;
++  return META_MONITOR_GET_CLASS (monitor)->get_suggested_position (monitor,
++                                                                   x, y);
+ }
+ 
+ static void
+@@ -729,6 +739,14 @@ meta_monitor_tiled_derive_dimensions (MetaMonitor   *monitor,
+   *out_height = max_y - min_y;
+ }
+ 
++static gboolean
++meta_monitor_tiled_get_suggested_position (MetaMonitor *monitor,
++                                           int         *x,
++                                           int         *y)
++{
++  return FALSE;
++}
++
+ static void
+ meta_monitor_tiled_finalize (GObject *object)
+ {
+@@ -756,6 +774,7 @@ meta_monitor_tiled_class_init (MetaMonitorTiledClass *klass)
+ 
+   monitor_class->get_main_output = meta_monitor_tiled_get_main_output;
+   monitor_class->derive_dimensions = meta_monitor_tiled_derive_dimensions;
++  monitor_class->get_suggested_position = meta_monitor_tiled_get_suggested_position;
+ }
+ 
+ static void
+diff --git a/src/backends/meta-monitor.h b/src/backends/meta-monitor.h
+index 46abe78..ec2b4cd 100644
+--- a/src/backends/meta-monitor.h
++++ b/src/backends/meta-monitor.h
+@@ -68,6 +68,9 @@ struct _MetaMonitorClass
+   void (* derive_dimensions) (MetaMonitor   *monitor,
+                               int           *width,
+                               int           *height);
++  gboolean (* get_suggested_position) (MetaMonitor *monitor,
++                                       int         *width,
++                                       int         *height);
+ };
+ 
+ #define META_TYPE_MONITOR_NORMAL (meta_monitor_normal_get_type ())
+-- 
+2.9.3
+
+From a3b4ee568985ddb10cc71f58c5c937c1dd86581f Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20=C3=85dahl?= <jadahl@gmail.com>
+Date: Mon, 1 May 2017 12:01:41 +0800
+Subject: [PATCH 05/19] monitor: Handle tiled monitors where (0, 0) is not the
+ main output
+
+In some circumstances, the origin tile (0, 0) is not the one that
+should be used to drive the monitor when using a non-tiled mode. Update
+MetaMonitorTiled to support this case. It also seems to be so that the
+preferred mode might be some low resolution or bogus mode on these
+monitors, so also adapt MetaMonitorTiled to manage to ignore the
+preferred mode of a tiled monitor if the preferred mode doesn't use
+both tiles.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=781723
+---
+ src/backends/meta-monitor.c | 296 ++++++++++++++++++++++++++++++++++++++++----
+ 1 file changed, 269 insertions(+), 27 deletions(-)
+
+diff --git a/src/backends/meta-monitor.c b/src/backends/meta-monitor.c
+index 279e5f3..7d67989 100644
+--- a/src/backends/meta-monitor.c
++++ b/src/backends/meta-monitor.c
+@@ -69,6 +69,10 @@ struct _MetaMonitorTiled
+ 
+   uint32_t tile_group_id;
+ 
++  /* The tile (0, 0) output. */
++  MetaOutput *origin_output;
++
++  /* The output enabled even when a non-tiled mode is used. */
+   MetaOutput *main_output;
+ };
+ 
+@@ -447,7 +451,7 @@ add_tiled_monitor_outputs (MetaMonitorManager *monitor_manager,
+         continue;
+ 
+       g_warn_if_fail (output->subpixel_order ==
+-                      monitor_tiled->main_output->subpixel_order);
++                      monitor_tiled->origin_output->subpixel_order);
+ 
+       monitor_priv->outputs = g_list_append (monitor_priv->outputs, output);
+     }
+@@ -541,15 +545,45 @@ is_crtc_mode_tiled (MetaOutput   *output,
+           crtc_mode->height == (int) output->tile_info.tile_h);
+ }
+ 
++static MetaCrtcMode *
++find_tiled_crtc_mode (MetaOutput *output,
++                      float       refresh_rate)
++{
++  MetaCrtcMode *crtc_mode;
++  unsigned int i;
++
++  crtc_mode = output->preferred_mode;
++  if (is_crtc_mode_tiled (output, crtc_mode))
++    return crtc_mode;
++
++  for (i = 0; i < output->n_modes; i++)
++    {
++      crtc_mode = output->modes[i];
++
++      if (!is_crtc_mode_tiled (output, crtc_mode))
++        continue;
++
++      if (crtc_mode->refresh_rate != refresh_rate)
++        continue;
++
++      return crtc_mode;
++    }
++
++  return NULL;
++}
++
+ static MetaMonitorMode *
+-create_tiled_monitor_mode (MetaMonitorTiled *monitor_tiled)
++create_tiled_monitor_mode (MetaMonitorTiled *monitor_tiled,
++                           float             refresh_rate,
++                           gboolean         *out_is_preferred)
+ {
+   MetaMonitor *monitor = META_MONITOR (monitor_tiled);
+   MetaMonitorPrivate *monitor_priv =
+     meta_monitor_get_instance_private (monitor);
+   MetaMonitorMode *mode;
+   GList *l;
+-  int i;
++  unsigned int i;
++  gboolean is_preferred = TRUE;
+ 
+   mode = g_new0 (MetaMonitorMode, 1);
+   meta_monitor_tiled_calculate_tiled_size (monitor,
+@@ -560,29 +594,93 @@ create_tiled_monitor_mode (MetaMonitorTiled *monitor_tiled)
+   for (l = monitor_priv->outputs, i = 0; l; l = l->next, i++)
+     {
+       MetaOutput *output = l->data;
+-      MetaCrtcMode *preferred_crtc_mode = output->preferred_mode;
++      MetaCrtcMode *tiled_crtc_mode;
+       int x;
+       int y;
+ 
++      tiled_crtc_mode = find_tiled_crtc_mode (output, refresh_rate);
++      if (!tiled_crtc_mode)
++        {
++          g_warning ("No tiled mode with refresh rate %f on %s",
++                     refresh_rate, output->name);
++          meta_monitor_mode_free (mode);
++          return NULL;
++        }
++
+       calculate_tile_coordinate (monitor, output, &x, &y);
+ 
+       mode->crtc_modes[i] = (MetaMonitorCrtcMode) {
+         .x = x,
+         .y = y,
+         .output = output,
+-        .crtc_mode = preferred_crtc_mode
++        .crtc_mode = tiled_crtc_mode
+       };
+ 
+-      g_warn_if_fail (mode->spec.refresh_rate == 0.0f ||
+-                      (mode->spec.refresh_rate ==
+-                       preferred_crtc_mode->refresh_rate));
++      mode->spec.refresh_rate = refresh_rate;
+ 
+-      mode->spec.refresh_rate = preferred_crtc_mode->refresh_rate;
++      is_preferred = is_preferred && tiled_crtc_mode == output->preferred_mode;
+     }
+ 
++  *out_is_preferred = is_preferred;
++
+   return mode;
+ }
+ 
++static void
++generate_tiled_monitor_modes (MetaMonitorTiled *monitor_tiled)
++{
++  MetaMonitor *monitor = META_MONITOR (monitor_tiled);
++  MetaMonitorPrivate *monitor_priv =
++    meta_monitor_get_instance_private (monitor);
++  MetaOutput *main_output;
++  GList *tiled_modes = NULL;
++  unsigned int i;
++
++  main_output = meta_monitor_get_main_output (META_MONITOR (monitor_tiled));
++
++  for (i = 0; i < main_output->n_modes; i++)
++    {
++      MetaCrtcMode *crtc_mode = main_output->modes[i];
++      MetaMonitorMode *mode;
++      gboolean is_preferred;
++
++      if (!is_crtc_mode_tiled (main_output, crtc_mode))
++        continue;
++
++      mode = create_tiled_monitor_mode (monitor_tiled, crtc_mode->refresh_rate,
++                                        &is_preferred);
++      if (!mode)
++        continue;
++
++      tiled_modes = g_list_append (tiled_modes, mode);
++
++      if (is_monitor_mode_assigned (monitor, mode))
++        monitor_priv->current_mode = mode;
++
++      if (is_preferred)
++        monitor_priv->preferred_mode = mode;
++    }
++
++  if (!monitor_priv->preferred_mode)
++    {
++      MetaMonitorMode *best_mode = NULL;
++      GList *l;
++
++      for (l = tiled_modes; l; l = l->next)
++        {
++          MetaMonitorMode *mode = l->data;
++
++          if (!best_mode ||
++              mode->spec.refresh_rate > best_mode->spec.refresh_rate)
++            best_mode = mode;
++        }
++
++      monitor_priv->preferred_mode = best_mode;
++    }
++
++  monitor_priv->modes = g_list_concat (monitor_priv->modes, tiled_modes);
++}
++
+ static MetaMonitorMode *
+ create_untiled_monitor_mode (MetaMonitorTiled *monitor_tiled,
+                              MetaOutput       *main_output,
+@@ -633,42 +731,184 @@ create_untiled_monitor_mode (MetaMonitorTiled *monitor_tiled,
+   return mode;
+ }
+ 
+-static void
+-meta_monitor_tiled_generate_modes (MetaMonitorTiled *monitor_tiled)
++static int
++count_untiled_crtc_modes (MetaOutput *output)
++{
++  int count;
++  unsigned int i;
++
++  count = 0;
++  for (i = 0; i < output->n_modes; i++)
++    {
++      MetaCrtcMode *crtc_mode = output->modes[i];
++
++      if (!is_crtc_mode_tiled (output, crtc_mode))
++        count++;
++    }
++
++  return count;
++}
++
++static MetaOutput *
++find_untiled_output (MetaMonitorTiled *monitor_tiled)
+ {
+   MetaMonitor *monitor = META_MONITOR (monitor_tiled);
+   MetaMonitorPrivate *monitor_priv =
+     meta_monitor_get_instance_private (monitor);
+-  MetaMonitorMode *mode;
+-  MetaOutput *main_output;
+-  unsigned int i;
++  MetaOutput *best_output;
++  int best_untiled_crtc_mode_count;
++  GList *l;
+ 
+-  mode = create_tiled_monitor_mode (monitor_tiled);
+-  monitor_priv->modes = g_list_append (monitor_priv->modes, mode);
++  best_output = monitor_tiled->origin_output;
++  best_untiled_crtc_mode_count =
++    count_untiled_crtc_modes (monitor_tiled->origin_output);
+ 
+-  monitor_priv->preferred_mode = mode;
++  for (l = monitor_priv->outputs; l; l = l->next)
++    {
++      MetaOutput *output = l->data;
++      int untiled_crtc_mode_count;
+ 
+-  if (is_monitor_mode_assigned (monitor, mode))
+-    monitor_priv->current_mode = mode;
++      if (output == monitor_tiled->origin_output)
++        continue;
++
++      untiled_crtc_mode_count = count_untiled_crtc_modes (output);
++      if (untiled_crtc_mode_count > best_untiled_crtc_mode_count)
++        {
++          best_untiled_crtc_mode_count = untiled_crtc_mode_count;
++          best_output = output;
++        }
++    }
++
++  return best_output;
++}
++
++static void
++generate_untiled_monitor_modes (MetaMonitorTiled *monitor_tiled)
++{
++  MetaMonitor *monitor = META_MONITOR (monitor_tiled);
++  MetaMonitorPrivate *monitor_priv =
++    meta_monitor_get_instance_private (monitor);
++  MetaOutput *main_output;
++  unsigned int i;
+ 
+   main_output = meta_monitor_get_main_output (monitor);
++
+   for (i = 0; i < main_output->n_modes; i++)
+     {
+       MetaCrtcMode *crtc_mode = main_output->modes[i];
++      MetaMonitorMode *mode;
+ 
+       mode = create_untiled_monitor_mode (monitor_tiled,
+                                           main_output,
+                                           crtc_mode);
+-      if (mode)
++      if (!mode)
++        continue;
++
++      monitor_priv->modes = g_list_append (monitor_priv->modes, mode);
++
++      if (is_monitor_mode_assigned (monitor, mode))
+         {
+-          monitor_priv->modes = g_list_append (monitor_priv->modes, mode);
++          g_assert (!monitor_priv->current_mode);
++          monitor_priv->current_mode = mode;
++        }
++
++      if (!monitor_priv->preferred_mode &&
++          crtc_mode == main_output->preferred_mode)
++        monitor_priv->preferred_mode = mode;
++    }
++}
+ 
+-          if (is_monitor_mode_assigned (monitor, mode))
+-            {
+-              g_assert (!monitor_priv->current_mode);
+-              monitor_priv->current_mode = mode;
+-            }
++static MetaMonitorMode *
++find_best_mode (MetaMonitor *monitor)
++{
++  MetaMonitorPrivate *monitor_priv =
++    meta_monitor_get_instance_private (monitor);
++  MetaMonitorMode *best_mode = NULL;
++  GList *l;
++
++  for (l = monitor_priv->modes; l; l = l->next)
++    {
++      MetaMonitorMode *mode = l->data;
++      int area, best_area;
++
++      if (!best_mode)
++        {
++          best_mode = mode;
++          continue;
++        }
++
++      area = mode->spec.width * mode->spec.height;
++      best_area = best_mode->spec.width * best_mode->spec.height;
++      if (area > best_area)
++        {
++          best_mode = mode;
++          continue;
+         }
++
++      if (mode->spec.refresh_rate > best_mode->spec.refresh_rate)
++        {
++          best_mode = mode;
++          continue;
++        }
++    }
++
++  return best_mode;
++}
++
++static void
++meta_monitor_tiled_generate_modes (MetaMonitorTiled *monitor_tiled)
++{
++  MetaMonitor *monitor = META_MONITOR (monitor_tiled);
++  MetaMonitorPrivate *monitor_priv =
++    meta_monitor_get_instance_private (monitor);
++
++  /*
++   * Tiled monitors may look a bit different from each other, depending on the
++   * monitor itself, the driver, etc.
++   *
++   * On some, the tiled modes will be the preferred CRTC modes, and running
++   * untiled is done by only enabling (0, 0) tile. In this case, things are
++   * pretty straight forward.
++   *
++   * Other times a monitor may have some bogus mode preferred on the main tile,
++   * and an untiled mode preferred on the non-main tile, and there seems to be
++   * no guarantee that the (0, 0) tile is the one that should drive the
++   * non-tiled mode.
++   *
++   * To handle both these cases, the following hueristics are implemented:
++   *
++   *  1) Find all the tiled CRTC modes of the (0, 0) tile, and create tiled
++   *     monitor modes for all tiles based on these.
++   *  2) If there is any tiled monitor mode combination where all CRTC modes
++   *     are the preferred ones, that one is marked as preferred.
++   *  3) If there is no preferred mode determined so far, assume the tiled
++   *     monitor mode with the highest refresh rate is preferred.
++   *  4) Find the tile with highest number of untiled CRTC modes available,
++   *     assume this is the one driving the monitor in untiled mode, and
++   *     create monitor modes for all untiled CRTC modes of that tile. If
++   *     there is still no preferred mode, set any untiled mode as preferred
++   *     if the CRTC mode is marked as such.
++   *  5) If at this point there is still no preferred mode, just pick the one
++   *     with the highest number of pixels and highest refresh rate.
++   *
++   * Note that this ignores the preference if the preference is a non-tiled
++   * mode. This seems to be the case on some systems, where the user tends to
++   * manually set up the tiled mode anyway.
++   */
++
++  generate_tiled_monitor_modes (monitor_tiled);
++
++  if (!monitor_priv->preferred_mode)
++    g_warning ("Tiled monitor on %s didn't have any tiled modes",
++               monitor_priv->spec->connector);
++
++  generate_untiled_monitor_modes (monitor_tiled);
++
++  if (!monitor_priv->preferred_mode)
++    {
++      g_warning ("Tiled monitor on %s didn't have a valid preferred mode",
++                 monitor_priv->spec->connector);
++      monitor_priv->preferred_mode = find_best_mode (monitor);
+     }
+ }
+ 
+@@ -687,9 +927,11 @@ meta_monitor_tiled_new (MetaMonitorManager *monitor_manager,
+   monitor_tiled->tile_group_id = output->tile_info.group_id;
+   monitor_priv->winsys_id = output->winsys_id;
+ 
+-  monitor_tiled->main_output = output;
++  monitor_tiled->origin_output = output;
+   add_tiled_monitor_outputs (monitor_manager, monitor_tiled);
+ 
++  monitor_tiled->main_output = find_untiled_output (monitor_tiled);
++
+   meta_monitor_generate_spec (monitor);
+ 
+   meta_monitor_manager_tiled_monitor_added (monitor_manager,
+-- 
+2.9.3
+
+From 57d07bd38bfd08f1dd9dbac365a55ed1505cb7ff Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20=C3=85dahl?= <jadahl@gmail.com>
+Date: Mon, 1 May 2017 12:07:44 +0800
+Subject: [PATCH 06/19] tests/monitor-unit-tests: Check
+ meta_monitor_is_active()
+
+https://bugzilla.gnome.org/show_bug.cgi?id=781723
+---
+ src/tests/monitor-unit-tests.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/tests/monitor-unit-tests.c b/src/tests/monitor-unit-tests.c
+index 7929a9c..bbef527 100644
+--- a/src/tests/monitor-unit-tests.c
++++ b/src/tests/monitor-unit-tests.c
+@@ -583,6 +583,10 @@ check_monitor_configuration (MonitorTestCase *test_case)
+                                             expected_current_mode_index)->data;
+ 
+       g_assert (current_mode == expected_current_mode);
++      if (current_mode)
++        g_assert (meta_monitor_is_active (monitor));
++      else
++        g_assert (!meta_monitor_is_active (monitor));
+ 
+       if (current_mode)
+         {
+-- 
+2.9.3
+
+From 3254103d3e203d755c2161fbc7eb76cfbd4e71cc Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20=C3=85dahl?= <jadahl@gmail.com>
+Date: Mon, 1 May 2017 12:12:42 +0800
+Subject: [PATCH 07/19] tests/monitor-unit-tests: Check handling of odd tiled
+ monitors
+
+Add tests for handling tiled monitors where the origin tile output is
+not the main output.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=781723
+---
+ .../monitor-configs/tiled-custom-resolution.xml    |  22 ++
+ src/tests/monitor-unit-tests.c                     | 386 ++++++++++++++++++++-
+ 2 files changed, 402 insertions(+), 6 deletions(-)
+ create mode 100644 src/tests/monitor-configs/tiled-custom-resolution.xml
+
+diff --git a/src/tests/monitor-configs/tiled-custom-resolution.xml b/src/tests/monitor-configs/tiled-custom-resolution.xml
+new file mode 100644
+index 0000000..8ee2abf
+--- /dev/null
++++ b/src/tests/monitor-configs/tiled-custom-resolution.xml
+@@ -0,0 +1,22 @@
++<monitors version="2">
++  <configuration>
++    <logicalmonitor>
++      <x>0</x>
++      <y>0</y>
++      <primary>yes</primary>
++      <monitor>
++       <monitorspec>
++         <connector>DP-2</connector>
++         <vendor>MetaProduct's Inc.</vendor>
++         <product>MetaMonitor</product>
++         <serial>0x123456</serial>
++       </monitorspec>
++       <mode>
++         <width>800</width>
++         <height>600</height>
++         <rate>60</rate>
++       </mode>
++      </monitor>
++    </logicalmonitor>
++  </configuration>
++</monitors>
+diff --git a/src/tests/monitor-unit-tests.c b/src/tests/monitor-unit-tests.c
+index bbef527..d22b6f0 100644
+--- a/src/tests/monitor-unit-tests.c
++++ b/src/tests/monitor-unit-tests.c
+@@ -337,17 +337,29 @@ check_monitor_mode (MetaMonitor         *monitor,
+   CheckMonitorModeData *data = user_data;
+   MetaMonitorManager *monitor_manager = data->monitor_manager;
+   MetaOutput *output;
++  int crtc_mode_index;
+   MetaCrtcMode *crtc_mode;
+ 
+   output = output_from_winsys_id (monitor_manager,
+                                   data->expect_crtc_mode_iter->output);
+-  crtc_mode = &monitor_manager->modes[data->expect_crtc_mode_iter->crtc_mode];
++  crtc_mode_index = data->expect_crtc_mode_iter->crtc_mode;
++  if (crtc_mode_index == -1)
++    crtc_mode = NULL;
++  else
++    crtc_mode = &monitor_manager->modes[crtc_mode_index];
+ 
+   g_assert (monitor_crtc_mode->output == output);
+   g_assert (monitor_crtc_mode->crtc_mode == crtc_mode);
+ 
+-  g_assert_cmpint (monitor_crtc_mode->x, ==, data->expect_crtc_mode_iter->x);
+-  g_assert_cmpint (monitor_crtc_mode->y, ==, data->expect_crtc_mode_iter->y);
++  if (crtc_mode)
++    {
++      g_assert_cmpint (monitor_crtc_mode->x,
++                       ==,
++                       data->expect_crtc_mode_iter->x);
++      g_assert_cmpint (monitor_crtc_mode->y,
++                       ==,
++                       data->expect_crtc_mode_iter->y);
++    }
+ 
+   data->expect_crtc_mode_iter++;
+ 
+@@ -368,8 +380,11 @@ check_current_monitor_mode (MetaMonitor         *monitor,
+   output = output_from_winsys_id (monitor_manager,
+                                   data->expect_crtc_mode_iter->output);
+ 
+-  g_assert_nonnull (output->crtc);
+-  g_assert (monitor_crtc_mode->crtc_mode == output->crtc->current_mode);
++  if (data->expect_crtc_mode_iter->crtc_mode != -1)
++    {
++      g_assert_nonnull (output->crtc);
++      g_assert (monitor_crtc_mode->crtc_mode == output->crtc->current_mode);
++    }
+ 
+   data->expect_crtc_mode_iter++;
+ 
+@@ -459,7 +474,8 @@ check_logical_monitor (MonitorTestCase               *test_case,
+               primary_output = output;
+             }
+ 
+-          g_assert (output->crtc->logical_monitor == logical_monitor);
++          g_assert (!output->crtc ||
++                    output->crtc->logical_monitor == logical_monitor);
+           g_assert_cmpint (logical_monitor->is_presentation,
+                            ==,
+                            output->is_presentation);
+@@ -1242,6 +1258,182 @@ meta_test_monitor_tiled_linear_config (void)
+ }
+ 
+ static void
++meta_test_monitor_tiled_non_preferred_linear_config (void)
++{
++  MonitorTestCase test_case = {
++    .setup = {
++      .modes = {
++        {
++          .width = 640,
++          .height = 480,
++          .refresh_rate = 60.0
++        },
++        {
++          .width = 800,
++          .height = 600,
++          .refresh_rate = 60.0
++        },
++        {
++          .width = 512,
++          .height = 768,
++          .refresh_rate = 120.0
++        },
++        {
++          .width = 1024,
++          .height = 768,
++          .refresh_rate = 60.0
++        },
++      },
++      .n_modes = 4,
++      .outputs = {
++        {
++          .crtc = -1,
++          .modes = { 0, 2 },
++          .n_modes = 2,
++          .preferred_mode = 1,
++          .possible_crtcs = { 0 },
++          .n_possible_crtcs = 1,
++          .width_mm = 222,
++          .height_mm = 125,
++          .tile_info = {
++            .group_id = 1,
++            .max_h_tiles = 2,
++            .max_v_tiles = 1,
++            .loc_h_tile = 0,
++            .loc_v_tile = 0,
++            .tile_w = 512,
++            .tile_h = 768
++          }
++        },
++        {
++          .crtc = -1,
++          .modes = { 1, 2, 3 },
++          .n_modes = 3,
++          .preferred_mode = 0,
++          .possible_crtcs = { 1 },
++          .n_possible_crtcs = 1,
++          .width_mm = 222,
++          .height_mm = 125,
++          .tile_info = {
++            .group_id = 1,
++            .max_h_tiles = 2,
++            .max_v_tiles = 1,
++            .loc_h_tile = 1,
++            .loc_v_tile = 0,
++            .tile_w = 512,
++            .tile_h = 768
++          }
++        }
++      },
++      .n_outputs = 2,
++      .crtcs = {
++        {
++          .current_mode = -1
++        },
++        {
++          .current_mode = -1
++        }
++      },
++      .n_crtcs = 2
++    },
++
++    .expect = {
++      .monitors = {
++        {
++          .outputs = { 0, 1 },
++          .n_outputs = 2,
++          .modes = {
++            {
++              .width = 1024,
++              .height = 768,
++              .crtc_modes = {
++                {
++                  .output = 0,
++                  .crtc_mode = 2
++                },
++                {
++                  .output = 1,
++                  .crtc_mode = 2,
++                  .x = 512
++                }
++              }
++            },
++            {
++              .width = 800,
++              .height = 600,
++              .crtc_modes = {
++                {
++                  .output = 0,
++                  .crtc_mode = -1
++                },
++                {
++                  .output = 1,
++                  .crtc_mode = 1,
++                }
++              }
++            },
++            {
++              .width = 1024,
++              .height = 768,
++              .crtc_modes = {
++                {
++                  .output = 0,
++                  .crtc_mode = -1
++                },
++                {
++                  .output = 1,
++                  .crtc_mode = 3,
++                }
++              }
++            },
++          },
++          .n_modes = 3,
++          .current_mode = 0,
++          .width_mm = 222,
++          .height_mm = 125,
++        }
++      },
++      .n_monitors = 1,
++      .logical_monitors = {
++        {
++          .monitors = { 0 },
++          .n_monitors = 1,
++          .layout = { .x = 0, .y = 0, .width = 1024, .height = 768 },
++          .scale = 1
++        },
++      },
++      .n_logical_monitors = 1,
++      .primary_logical_monitor = 0,
++      .n_outputs = 2,
++      .crtcs = {
++        {
++          .current_mode = 2,
++        },
++        {
++          .current_mode = 2,
++        }
++      },
++      .n_crtcs = 2,
++      .n_tiled_monitors = 1,
++      .screen_width = 1024,
++      .screen_height = 768,
++    }
++  };
++  MetaMonitorTestSetup *test_setup;
++
++  if (!is_using_monitor_config_manager ())
++    {
++      g_test_skip ("Only the new monitor config manager handles this case.");
++      return;
++    }
++
++  test_setup = create_monitor_test_setup (&test_case,
++                                          MONITOR_TEST_FLAG_NO_STORED);
++  emulate_hotplug (test_setup);
++  check_monitor_configuration (&test_case);
++}
++
++static void
+ meta_test_monitor_hidpi_linear_config (void)
+ {
+   MonitorTestCase test_case = {
+@@ -2616,6 +2808,184 @@ meta_test_monitor_custom_underscanning_config (void)
+   check_monitor_configuration (&test_case);
+ }
+ 
++static void
++meta_test_monitor_custom_tiled_non_preferred_config (void)
++{
++  MonitorTestCase test_case = {
++    .setup = {
++      .modes = {
++        {
++          .width = 640,
++          .height = 480,
++          .refresh_rate = 60.0
++        },
++        {
++          .width = 800,
++          .height = 600,
++          .refresh_rate = 60.0
++        },
++        {
++          .width = 512,
++          .height = 768,
++          .refresh_rate = 120.0
++        },
++        {
++          .width = 1024,
++          .height = 768,
++          .refresh_rate = 60.0
++        },
++      },
++      .n_modes = 4,
++      .outputs = {
++        {
++          .crtc = -1,
++          .modes = { 0, 2 },
++          .n_modes = 2,
++          .preferred_mode = 1,
++          .possible_crtcs = { 0 },
++          .n_possible_crtcs = 1,
++          .width_mm = 222,
++          .height_mm = 125,
++          .tile_info = {
++            .group_id = 1,
++            .max_h_tiles = 2,
++            .max_v_tiles = 1,
++            .loc_h_tile = 0,
++            .loc_v_tile = 0,
++            .tile_w = 512,
++            .tile_h = 768
++          }
++        },
++        {
++          .crtc = -1,
++          .modes = { 1, 2, 3 },
++          .n_modes = 3,
++          .preferred_mode = 0,
++          .possible_crtcs = { 1 },
++          .n_possible_crtcs = 1,
++          .width_mm = 222,
++          .height_mm = 125,
++          .tile_info = {
++            .group_id = 1,
++            .max_h_tiles = 2,
++            .max_v_tiles = 1,
++            .loc_h_tile = 1,
++            .loc_v_tile = 0,
++            .tile_w = 512,
++            .tile_h = 768
++          }
++        }
++      },
++      .n_outputs = 2,
++      .crtcs = {
++        {
++          .current_mode = -1
++        },
++        {
++          .current_mode = -1
++        }
++      },
++      .n_crtcs = 2
++    },
++
++    .expect = {
++      .monitors = {
++        {
++          .outputs = { 0, 1 },
++          .n_outputs = 2,
++          .modes = {
++            {
++              .width = 1024,
++              .height = 768,
++              .crtc_modes = {
++                {
++                  .output = 0,
++                  .crtc_mode = 2
++                },
++                {
++                  .output = 1,
++                  .crtc_mode = 2,
++                  .x = 512
++                }
++              }
++            },
++            {
++              .width = 800,
++              .height = 600,
++              .crtc_modes = {
++                {
++                  .output = 0,
++                  .crtc_mode = -1
++                },
++                {
++                  .output = 1,
++                  .crtc_mode = 1,
++                }
++              }
++            },
++            {
++              .width = 1024,
++              .height = 768,
++              .crtc_modes = {
++                {
++                  .output = 0,
++                  .crtc_mode = -1
++                },
++                {
++                  .output = 1,
++                  .crtc_mode = 3,
++                }
++              }
++            },
++          },
++          .n_modes = 3,
++          .current_mode = 1,
++          .width_mm = 222,
++          .height_mm = 125,
++        }
++      },
++      .n_monitors = 1,
++      .logical_monitors = {
++        {
++          .monitors = { 0 },
++          .n_monitors = 1,
++          .layout = { .x = 0, .y = 0, .width = 800, .height = 600 },
++          .scale = 1
++        },
++      },
++      .n_logical_monitors = 1,
++      .primary_logical_monitor = 0,
++      .n_outputs = 2,
++      .crtcs = {
++        {
++          .current_mode = -1,
++        },
++        {
++          .current_mode = 1,
++        }
++      },
++      .n_crtcs = 2,
++      .n_tiled_monitors = 1,
++      .screen_width = 800,
++      .screen_height = 600,
++    }
++  };
++  MetaMonitorTestSetup *test_setup;
++
++  if (!is_using_monitor_config_manager ())
++    {
++      g_test_skip ("Only the new monitor config manager handles this case.");
++      return;
++    }
++
++  test_setup = create_monitor_test_setup (&test_case,
++                                          MONITOR_TEST_FLAG_NONE);
++  set_custom_monitor_config ("tiled-custom-resolution.xml");
++  emulate_hotplug (test_setup);
++
++  check_monitor_configuration (&test_case);
++}
++
+ void
+ init_monitor_tests (void)
+ {
+@@ -2635,6 +3005,8 @@ init_monitor_tests (void)
+                    meta_test_monitor_preferred_linear_config);
+   g_test_add_func ("/backends/monitor/tiled-linear-config",
+                    meta_test_monitor_tiled_linear_config);
++  g_test_add_func ("/backends/monitor/tiled-non-preferred-linear-config",
++                   meta_test_monitor_tiled_non_preferred_linear_config);
+   g_test_add_func ("/backends/monitor/hidpi-linear-config",
+                    meta_test_monitor_hidpi_linear_config);
+   g_test_add_func ("/backends/monitor/suggested-config",
+@@ -2658,4 +3030,6 @@ init_monitor_tests (void)
+                    meta_test_monitor_custom_primary_config);
+   g_test_add_func ("/backends/monitor/custom/underscanning-config",
+                    meta_test_monitor_custom_underscanning_config);
++  g_test_add_func ("/backends/monitor/custom/tiled-non-preferred-config",
++                   meta_test_monitor_custom_tiled_non_preferred_config);
+ }
+-- 
+2.9.3
+
+From dfdc15c72ca84ee129515d228bafef7dab6a656a Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20=C3=85dahl?= <jadahl@gmail.com>
+Date: Thu, 11 May 2017 17:24:53 +0800
+Subject: [PATCH 08/19] monitor: Don't get the monitor manager from the backend
+
+We will both create and destroy monitors during initialization (when
+using the X11 backend), so don't try to access the monitor manager from
+the backend, but store a pointer to it instead.
+
+It's stored in MetaMonitor even though only MetaMonitorTiled uses it,
+mostly because it makes more sense to store such a pointer there.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=781723
+---
+ src/backends/meta-monitor-manager.c |  2 +-
+ src/backends/meta-monitor.c         | 20 +++++++++++++-------
+ src/backends/meta-monitor.h         |  3 ++-
+ 3 files changed, 16 insertions(+), 9 deletions(-)
+
+diff --git a/src/backends/meta-monitor-manager.c b/src/backends/meta-monitor-manager.c
+index dc1d960..0d1bb05 100644
+--- a/src/backends/meta-monitor-manager.c
++++ b/src/backends/meta-monitor-manager.c
+@@ -1667,7 +1667,7 @@ rebuild_monitors (MetaMonitorManager *manager)
+         {
+           MetaMonitorNormal *monitor_normal;
+ 
+-          monitor_normal = meta_monitor_normal_new (output);
++          monitor_normal = meta_monitor_normal_new (manager, output);
+           manager->monitors = g_list_append (manager->monitors,
+                                              monitor_normal);
+         }
+diff --git a/src/backends/meta-monitor.c b/src/backends/meta-monitor.c
+index 7d67989..30c2197 100644
+--- a/src/backends/meta-monitor.c
++++ b/src/backends/meta-monitor.c
+@@ -34,6 +34,8 @@ typedef struct _MetaMonitorMode
+ 
+ typedef struct _MetaMonitorPrivate
+ {
++  MetaMonitorManager *monitor_manager;
++
+   GList *outputs;
+   GList *modes;
+ 
+@@ -348,7 +350,8 @@ meta_monitor_normal_generate_modes (MetaMonitorNormal *monitor_normal)
+ }
+ 
+ MetaMonitorNormal *
+-meta_monitor_normal_new (MetaOutput *output)
++meta_monitor_normal_new (MetaMonitorManager *monitor_manager,
++                         MetaOutput         *output)
+ {
+   MetaMonitorNormal *monitor_normal;
+   MetaMonitor *monitor;
+@@ -358,6 +361,8 @@ meta_monitor_normal_new (MetaOutput *output)
+   monitor = META_MONITOR (monitor_normal);
+   monitor_priv = meta_monitor_get_instance_private (monitor);
+ 
++  monitor_priv->monitor_manager = monitor_manager;
++
+   monitor_priv->outputs = g_list_append (NULL, output);
+   monitor_priv->winsys_id = output->winsys_id;
+   meta_monitor_generate_spec (monitor);
+@@ -924,6 +929,8 @@ meta_monitor_tiled_new (MetaMonitorManager *monitor_manager,
+   monitor = META_MONITOR (monitor_tiled);
+   monitor_priv = meta_monitor_get_instance_private (monitor);
+ 
++  monitor_priv->monitor_manager = monitor_manager;
++
+   monitor_tiled->tile_group_id = output->tile_info.group_id;
+   monitor_priv->winsys_id = output->winsys_id;
+ 
+@@ -992,13 +999,12 @@ meta_monitor_tiled_get_suggested_position (MetaMonitor *monitor,
+ static void
+ meta_monitor_tiled_finalize (GObject *object)
+ {
+-  MetaMonitorTiled *monitor_tiled = META_MONITOR_TILED (object);
+-  MetaBackend *backend = meta_get_backend ();
+-  MetaMonitorManager *monitor_manager =
+-    meta_backend_get_monitor_manager (backend);
++  MetaMonitor *monitor = META_MONITOR (object);
++  MetaMonitorPrivate *monitor_priv =
++    meta_monitor_get_instance_private (monitor);
+ 
+-  meta_monitor_manager_tiled_monitor_removed (monitor_manager,
+-                                              META_MONITOR (monitor_tiled));
++  meta_monitor_manager_tiled_monitor_removed (monitor_priv->monitor_manager,
++                                              monitor);
+ }
+ 
+ static void
+diff --git a/src/backends/meta-monitor.h b/src/backends/meta-monitor.h
+index ec2b4cd..aa03889 100644
+--- a/src/backends/meta-monitor.h
++++ b/src/backends/meta-monitor.h
+@@ -86,7 +86,8 @@ G_DECLARE_FINAL_TYPE (MetaMonitorTiled, meta_monitor_tiled,
+ MetaMonitorTiled * meta_monitor_tiled_new (MetaMonitorManager *monitor_manager,
+                                            MetaOutput         *main_output);
+ 
+-MetaMonitorNormal * meta_monitor_normal_new (MetaOutput *output);
++MetaMonitorNormal * meta_monitor_normal_new (MetaMonitorManager *monitor_manager,
++                                             MetaOutput         *output);
+ 
+ MetaMonitorSpec * meta_monitor_get_spec (MetaMonitor *monitor);
+ 
+-- 
+2.9.3
+
+From ca31e4dc147997cae5abb75bf630acaaa30d2a8b Mon Sep 17 00:00:00 2001
+From: Olivier Fourdan <ofourdan@redhat.com>
+Date: Fri, 5 May 2017 13:55:51 +0200
+Subject: [PATCH 09/19] wayland: Make sure we have a pending geometry
+
+If the client doesn't set a geometry using xdg_shell, we'll compute its
+geometry based on its surface and subsurfaces.
+
+Yet, we translate that as a window (re)size only when there is a pending
+geometry, that we don't have when we computed the geometry by ourself.
+
+Make sure we set the pending new geometry flag when computing the
+geometry when it actually changed.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=782213
+---
+ src/wayland/meta-wayland-xdg-shell.c | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/src/wayland/meta-wayland-xdg-shell.c b/src/wayland/meta-wayland-xdg-shell.c
+index 5d3b97b..9791b9f 100644
+--- a/src/wayland/meta-wayland-xdg-shell.c
++++ b/src/wayland/meta-wayland-xdg-shell.c
+@@ -1272,11 +1272,19 @@ xdg_surface_role_commit (MetaWaylandSurfaceRole  *surface_role,
+     }
+   else if (!priv->has_set_geometry)
+     {
++      MetaRectangle new_geometry = { 0 };
++
+       /* If the surface has never set any geometry, calculate
+        * a default one unioning the surface and all subsurfaces together. */
++
+       meta_wayland_surface_calculate_window_geometry (surface,
+-                                                      &priv->geometry,
++                                                      &new_geometry,
+                                                       0, 0);
++      if (!meta_rectangle_equal (&new_geometry, &priv->geometry))
++        {
++          pending->has_new_geometry = TRUE;
++          priv->geometry = new_geometry;
++        }
+     }
+ }
+ 
+-- 
+2.9.3
+
+From 7f0f880fba6c1b066cfa3d36aa113cc0d46fadad Mon Sep 17 00:00:00 2001
+From: Olivier Fourdan <ofourdan@redhat.com>
+Date: Wed, 10 May 2017 08:59:53 +0200
+Subject: [PATCH 10/19] wayland: Apply size hints regardless of geometry
+
+Previously we would bail out early in xdg_toplevel_role_commit() if no
+geometry change was set, ignoring the possible min/max size hints
+changes.
+
+But setting a min/max size hint without changing the geometry is
+perfectly valid, so we ought to apply the min/max changes regardless of
+a geometry change.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=782213
+---
+ src/wayland/meta-wayland-xdg-shell.c | 22 ++++++++++------------
+ 1 file changed, 10 insertions(+), 12 deletions(-)
+
+diff --git a/src/wayland/meta-wayland-xdg-shell.c b/src/wayland/meta-wayland-xdg-shell.c
+index 9791b9f..e840365 100644
+--- a/src/wayland/meta-wayland-xdg-shell.c
++++ b/src/wayland/meta-wayland-xdg-shell.c
+@@ -624,20 +624,18 @@ xdg_toplevel_role_commit (MetaWaylandSurfaceRole  *surface_role,
+   if (!window)
+     return;
+ 
+-  if (!pending->has_new_geometry)
++  if (pending->has_new_geometry)
+     {
+-      if (pending->dx != 0 || pending->dx != 0)
+-        {
+-          g_warning ("XXX: Attach-initiated move without a new geometry. This is unimplemented right now.");
+-        }
+-      return;
++      window_geometry = meta_wayland_xdg_surface_get_window_geometry (xdg_surface);
++      meta_window_wayland_move_resize (window,
++                                       &xdg_surface_priv->acked_configure_serial,
++                                       window_geometry,
++                                       pending->dx, pending->dy);
++    }
++  else if (pending->dx != 0 || pending->dx != 0)
++    {
++      g_warning ("XXX: Attach-initiated move without a new geometry. This is unimplemented right now.");
+     }
+-
+-  window_geometry = meta_wayland_xdg_surface_get_window_geometry (xdg_surface);
+-  meta_window_wayland_move_resize (window,
+-                                   &xdg_surface_priv->acked_configure_serial,
+-                                   window_geometry,
+-                                   pending->dx, pending->dy);
+ 
+   /* When we get to this point, we ought to have valid size hints */
+   if (pending->has_new_min_size || pending->has_new_max_size)
+-- 
+2.9.3
+
+From 1b4cd1b47de3e63d738da281ea230084524b673a Mon Sep 17 00:00:00 2001
+From: Carlos Garnacho <carlosg@gnome.org>
+Date: Thu, 18 May 2017 14:57:43 +0200
+Subject: [PATCH 11/19] cogl: Use pixel_format_to_gl_with_target in
+ find_best_gl_get_data_format
+
+Fixes cogl_texture_get_data() resorting to the wrong conversions when
+extracting the texture data. This notably resulted in RGB/RGBA buffers
+copied as-is into BGRA buffers, for instance for the fullscreen animation,
+or single-window screenshots of such buffers.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=779234
+---
+ cogl/cogl/cogl-texture-driver.h                     |  1 +
+ cogl/cogl/cogl-texture.c                            |  1 +
+ cogl/cogl/driver/gl/gl/cogl-texture-driver-gl.c     | 12 +++++++-----
+ cogl/cogl/driver/gl/gles/cogl-texture-driver-gles.c |  1 +
+ 4 files changed, 10 insertions(+), 5 deletions(-)
+
+diff --git a/cogl/cogl/cogl-texture-driver.h b/cogl/cogl/cogl-texture-driver.h
+index 3ab86ed..e548605 100644
+--- a/cogl/cogl/cogl-texture-driver.h
++++ b/cogl/cogl/cogl-texture-driver.h
+@@ -198,6 +198,7 @@ struct _CoglTextureDriver
+   CoglPixelFormat
+   (* find_best_gl_get_data_format) (CoglContext     *context,
+                                     CoglPixelFormat format,
++                                    CoglPixelFormat target_format,
+                                     GLenum *closest_gl_format,
+                                     GLenum *closest_gl_type);
+ };
+diff --git a/cogl/cogl/cogl-texture.c b/cogl/cogl/cogl-texture.c
+index 877d1d7..729fb0c 100644
+--- a/cogl/cogl/cogl-texture.c
++++ b/cogl/cogl/cogl-texture.c
+@@ -1059,6 +1059,7 @@ cogl_texture_get_data (CoglTexture *texture,
+ 
+   closest_format =
+     ctx->texture_driver->find_best_gl_get_data_format (ctx,
++                                                       texture_format,
+                                                        format,
+                                                        &closest_gl_format,
+                                                        &closest_gl_type);
+diff --git a/cogl/cogl/driver/gl/gl/cogl-texture-driver-gl.c b/cogl/cogl/driver/gl/gl/cogl-texture-driver-gl.c
+index d5ee4b4..036b04c 100644
+--- a/cogl/cogl/driver/gl/gl/cogl-texture-driver-gl.c
++++ b/cogl/cogl/driver/gl/gl/cogl-texture-driver-gl.c
+@@ -533,14 +533,16 @@ static CoglPixelFormat
+ _cogl_texture_driver_find_best_gl_get_data_format
+                                             (CoglContext *context,
+                                              CoglPixelFormat format,
++                                             CoglPixelFormat target_format,
+                                              GLenum *closest_gl_format,
+                                              GLenum *closest_gl_type)
+ {
+-  return context->driver_vtable->pixel_format_to_gl (context,
+-                                                     format,
+-                                                     NULL, /* don't need */
+-                                                     closest_gl_format,
+-                                                     closest_gl_type);
++  return context->driver_vtable->pixel_format_to_gl_with_target (context,
++                                                                 format,
++                                                                 target_format,
++                                                                 NULL, /* don't need */
++                                                                 closest_gl_format,
++                                                                 closest_gl_type);
+ }
+ 
+ const CoglTextureDriver
+diff --git a/cogl/cogl/driver/gl/gles/cogl-texture-driver-gles.c b/cogl/cogl/driver/gl/gles/cogl-texture-driver-gles.c
+index 34ba57f..1f62ade 100644
+--- a/cogl/cogl/driver/gl/gles/cogl-texture-driver-gles.c
++++ b/cogl/cogl/driver/gl/gles/cogl-texture-driver-gles.c
+@@ -615,6 +615,7 @@ static CoglPixelFormat
+ _cogl_texture_driver_find_best_gl_get_data_format
+                                             (CoglContext *context,
+                                              CoglPixelFormat format,
++                                             CoglPixelFormat target_format,
+                                              GLenum *closest_gl_format,
+                                              GLenum *closest_gl_type)
+ {
+-- 
+2.9.3
+
+From 7801df7ef6c721c403f472056eec13a5e7566888 Mon Sep 17 00:00:00 2001
+From: Olivier Fourdan <ofourdan@redhat.com>
+Date: Wed, 10 May 2017 11:32:29 +0200
+Subject: [PATCH 12/19] wayland: place window if maximized before placement
+
+If a client changes the state of a surface to issue a set_maximize, this
+causes apply_pending_state() to be called before mutter has placed the
+window.
+
+If the monitor on which the window is to be shown initially is different
+from the one where the pointer is placed, this causes the effect to be
+played at the wrong location before the window eventually reaches its
+location on another monitor.
+
+Force the window to be placed prior to change its state to maximized in
+xdg-shell so that mutter won't relocate the window afterwards.
+
+This also avoids sending an xdg_toplevel.configure with a size of 0x0
+which would cause the client to initially draw its surface with some
+arbitrary size.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=782183
+https://bugzilla.gnome.org/show_bug.cgi?id=781353
+---
+ src/wayland/meta-wayland-xdg-shell.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/wayland/meta-wayland-xdg-shell.c b/src/wayland/meta-wayland-xdg-shell.c
+index e840365..afe9546 100644
+--- a/src/wayland/meta-wayland-xdg-shell.c
++++ b/src/wayland/meta-wayland-xdg-shell.c
+@@ -348,6 +348,7 @@ xdg_toplevel_set_maximized (struct wl_client   *client,
+ {
+   MetaWaylandSurface *surface = surface_from_xdg_toplevel_resource (resource);
+ 
++  meta_window_force_placement (surface->window);
+   meta_window_maximize (surface->window, META_MAXIMIZE_BOTH);
+ }
+ 
+-- 
+2.9.3
+
+From a8ceceed1a6d381cffc6b52f6d1422381ad34672 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20=C3=85dahl?= <jadahl@gmail.com>
+Date: Fri, 21 Apr 2017 17:40:25 +0800
+Subject: [PATCH 13/19] window/wayland: Don't try to resize window on tear down
+
+When terminating mutter running as a display server, don't try to resize
+maximized windows when unmanaging, as at this point, they will have no
+MetaWaylandSurface. Originally this was done instead of setting the
+net_wm_state to not mess with future window managers, but when we're a
+Wayland compositor, this does not matter.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=782156
+---
+ src/core/window.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/src/core/window.c b/src/core/window.c
+index e35ed08..f15392d 100644
+--- a/src/core/window.c
++++ b/src/core/window.c
+@@ -2957,7 +2957,11 @@ unmaximize_window_before_freeing (MetaWindow        *window)
+       window->rect = window->saved_rect;
+       set_net_wm_state (window);
+     }
+-  else if (window->screen->closing)     /* See bug #358042 */
++  else if (window->screen->closing      /* See bug #358042 */
++#ifdef HAVE_WAYLAND
++           && !meta_is_wayland_compositor ()
++#endif
++           )
+     {
+       /* Do NOT update net_wm_state: this screen is closing,
+        * it likely will be managed by another window manager
+-- 
+2.9.3
+
+From 28b2added70f0212be40fd1d03b68e7f5371414c Mon Sep 17 00:00:00 2001
+From: Evan Welsh <gf.3432@gmail.com>
+Date: Tue, 23 May 2017 13:38:00 +0000
+Subject: [PATCH 14/19] Implements disable-while-typing in mutter.
+
+Disable-while-typing disables the touchpad while the user is typing.
+
+This patch introduces the necessary backend code to implement the
+org.gnome.desktop.peripherals.touchpad.disable-while-typing setting of
+gsettings-desktop-schemas which was implemented in commit
+4c5b1c1df399d6afaaccb237e299ccd1d5d29ddd and released as part of 3.24.
+This is known as dwt in libinput.
+
+This patch has been tested on X11 and Wayland.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=764852
+---
+ src/backends/meta-input-settings-private.h       |  4 ++-
+ src/backends/meta-input-settings.c               | 41 ++++++++++++++++++++++++
+ src/backends/native/meta-input-settings-native.c | 20 ++++++++++++
+ src/backends/x11/meta-input-settings-x11.c       | 12 +++++++
+ 4 files changed, 76 insertions(+), 1 deletion(-)
+
+diff --git a/src/backends/meta-input-settings-private.h b/src/backends/meta-input-settings-private.h
+index c778851..bff574d 100644
+--- a/src/backends/meta-input-settings-private.h
++++ b/src/backends/meta-input-settings-private.h
+@@ -65,6 +65,9 @@ struct _MetaInputSettingsClass
+   void (* set_tap_enabled)   (MetaInputSettings  *settings,
+                               ClutterInputDevice *device,
+                               gboolean            enabled);
++  void (* set_disable_while_typing) (MetaInputSettings  *settings,
++                                     ClutterInputDevice *device,
++                                     gboolean            enabled);
+   void (* set_invert_scroll) (MetaInputSettings  *settings,
+                               ClutterInputDevice *device,
+                               gboolean            inverted);
+@@ -117,7 +120,6 @@ struct _MetaInputSettingsClass
+                                   ClutterInputDeviceTool     *tool,
+                                   GDesktopStylusButtonAction  primary,
+                                   GDesktopStylusButtonAction  secondary);
+-
+   gboolean (* has_two_finger_scroll) (MetaInputSettings  *settings,
+                                       ClutterInputDevice *device);
+ };
+diff --git a/src/backends/meta-input-settings.c b/src/backends/meta-input-settings.c
+index 32512b4..264687d 100644
+--- a/src/backends/meta-input-settings.c
++++ b/src/backends/meta-input-settings.c
+@@ -449,6 +449,44 @@ update_device_natural_scroll (MetaInputSettings      *input_settings,
+ }
+ 
+ static void
++update_touchpad_disable_while_typing (MetaInputSettings  *input_settings,
++                                      ClutterInputDevice *device)
++{
++  GSettings *settings;
++  MetaInputSettingsClass *input_settings_class;
++  MetaInputSettingsPrivate *priv;
++  gboolean enabled;
++  const gchar *key = "disable-while-typing";
++
++  if (device &&
++      clutter_input_device_get_device_type (device) != CLUTTER_TOUCHPAD_DEVICE)
++    return;
++
++  priv = meta_input_settings_get_instance_private (input_settings);
++  input_settings_class = META_INPUT_SETTINGS_GET_CLASS (input_settings);
++  enabled = g_settings_get_boolean (priv->touchpad_settings, key);
++
++  if (device)
++   {
++      settings = get_settings_for_device_type (input_settings,
++                                               clutter_input_device_get_device_type (device));
++
++      if (!settings)
++        return;
++
++      settings_device_set_bool_setting (input_settings, device,
++                                        input_settings_class->set_disable_while_typing,
++                                        enabled);
++    }
++  else
++    {
++      settings_set_bool_setting (input_settings, CLUTTER_TOUCHPAD_DEVICE,
++                                 input_settings_class->set_disable_while_typing,
++                                 enabled);
++    }
++}
++
++static void
+ update_touchpad_tap_enabled (MetaInputSettings  *input_settings,
+                              ClutterInputDevice *device)
+ {
+@@ -989,6 +1027,8 @@ meta_input_settings_changed_cb (GSettings  *settings,
+         update_device_natural_scroll (input_settings, NULL);
+       else if (strcmp (key, "tap-to-click") == 0)
+         update_touchpad_tap_enabled (input_settings, NULL);
++      else if (strcmp(key, "disable-while-typing") == 0)
++        update_touchpad_disable_while_typing (input_settings, NULL);
+       else if (strcmp (key, "send-events") == 0)
+         update_touchpad_send_events (input_settings, NULL);
+       else if (strcmp (key, "edge-scrolling-enabled") == 0)
+@@ -1234,6 +1274,7 @@ apply_device_settings (MetaInputSettings  *input_settings,
+ 
+   update_touchpad_left_handed (input_settings, device);
+   update_touchpad_tap_enabled (input_settings, device);
++  update_touchpad_disable_while_typing (input_settings, device);
+   update_touchpad_send_events (input_settings, device);
+   update_touchpad_two_finger_scroll (input_settings, device);
+   update_touchpad_edge_scroll (input_settings, device);
+diff --git a/src/backends/native/meta-input-settings-native.c b/src/backends/native/meta-input-settings-native.c
+index 69e7608..952625e 100644
+--- a/src/backends/native/meta-input-settings-native.c
++++ b/src/backends/native/meta-input-settings-native.c
+@@ -122,6 +122,25 @@ meta_input_settings_native_set_tap_enabled (MetaInputSettings  *settings,
+ }
+ 
+ static void
++meta_input_settings_native_set_disable_while_typing (MetaInputSettings  *settings,
++                                                     ClutterInputDevice *device,
++                                                     gboolean            enabled)
++{
++  struct libinput_device *libinput_device;
++
++  libinput_device = clutter_evdev_input_device_get_libinput_device (device);
++
++  if (!libinput_device)
++    return;
++
++  if (libinput_device_config_dwt_is_available (libinput_device))
++    libinput_device_config_dwt_set_enabled (libinput_device,
++                                            enabled ?
++                                            LIBINPUT_CONFIG_DWT_ENABLED :
++                                            LIBINPUT_CONFIG_DWT_DISABLED);
++}
++
++static void
+ meta_input_settings_native_set_invert_scroll (MetaInputSettings  *settings,
+                                               ClutterInputDevice *device,
+                                               gboolean            inverted)
+@@ -507,6 +526,7 @@ meta_input_settings_native_class_init (MetaInputSettingsNativeClass *klass)
+   input_settings_class->set_scroll_button = meta_input_settings_native_set_scroll_button;
+   input_settings_class->set_click_method = meta_input_settings_native_set_click_method;
+   input_settings_class->set_keyboard_repeat = meta_input_settings_native_set_keyboard_repeat;
++  input_settings_class->set_disable_while_typing = meta_input_settings_native_set_disable_while_typing;
+ 
+   input_settings_class->set_tablet_mapping = meta_input_settings_native_set_tablet_mapping;
+   input_settings_class->set_tablet_keep_aspect = meta_input_settings_native_set_tablet_keep_aspect;
+diff --git a/src/backends/x11/meta-input-settings-x11.c b/src/backends/x11/meta-input-settings-x11.c
+index 012cb62..174fd32 100644
+--- a/src/backends/x11/meta-input-settings-x11.c
++++ b/src/backends/x11/meta-input-settings-x11.c
+@@ -206,6 +206,17 @@ meta_input_settings_x11_set_left_handed (MetaInputSettings  *settings,
+ }
+ 
+ static void
++meta_input_settings_x11_set_disable_while_typing (MetaInputSettings  *settings,
++                                                  ClutterInputDevice *device,
++                                                  gboolean            enabled)
++{
++  guchar value = (enabled) ? 1 : 0;
++
++  change_property (device, "libinput Disable While Typing Enabled",
++                   XA_INTEGER, 8, &value, 1);
++}
++
++static void
+ meta_input_settings_x11_set_tap_enabled (MetaInputSettings  *settings,
+                                          ClutterInputDevice *device,
+                                          gboolean            enabled)
+@@ -744,6 +755,7 @@ meta_input_settings_x11_class_init (MetaInputSettingsX11Class *klass)
+   input_settings_class->set_speed = meta_input_settings_x11_set_speed;
+   input_settings_class->set_left_handed = meta_input_settings_x11_set_left_handed;
+   input_settings_class->set_tap_enabled = meta_input_settings_x11_set_tap_enabled;
++  input_settings_class->set_disable_while_typing = meta_input_settings_x11_set_disable_while_typing;
+   input_settings_class->set_invert_scroll = meta_input_settings_x11_set_invert_scroll;
+   input_settings_class->set_edge_scroll = meta_input_settings_x11_set_edge_scroll;
+   input_settings_class->set_two_finger_scroll = meta_input_settings_x11_set_two_finger_scroll;
+-- 
+2.9.3
+
+From 2ec91abf38b3b055a735318c45f7e38d9408c1be Mon Sep 17 00:00:00 2001
+From: Bastien Nocera <hadess@hadess.net>
+Date: Wed, 31 May 2017 15:17:01 +0200
+Subject: [PATCH 15/19] monitor-manager: Fix crash when UPower is not available
+
+Don't access the upower client if it doesn't exist
+
+https://bugzilla.gnome.org/show_bug.cgi?id=780407
+---
+ src/backends/meta-monitor-manager.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/src/backends/meta-monitor-manager.c b/src/backends/meta-monitor-manager.c
+index 0d1bb05..eecef77 100644
+--- a/src/backends/meta-monitor-manager.c
++++ b/src/backends/meta-monitor-manager.c
+@@ -260,6 +260,9 @@ lid_is_closed_changed (UpClient   *client,
+ static gboolean
+ meta_monitor_manager_real_is_lid_closed (MetaMonitorManager *manager)
+ {
++  if (!manager->up_client)
++    return FALSE;
++
+   return up_client_get_lid_is_closed (manager->up_client);
+ }
+ 
+-- 
+2.9.3
+
+From 8699aca7d7d83ca8ef758a5efe12da9c7e7396fc Mon Sep 17 00:00:00 2001
+From: Ikey Doherty <michael.i.doherty@intel.com>
+Date: Fri, 6 Nov 2015 03:29:05 +0000
+Subject: [PATCH 16/19] backends/x11: Ensure reply is initialised to NULL
+
+https://bugzilla.gnome.org/show_bug.cgi?id=757661
+---
+ src/backends/x11/meta-monitor-manager-xrandr.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/backends/x11/meta-monitor-manager-xrandr.c b/src/backends/x11/meta-monitor-manager-xrandr.c
+index cc7a444..b35b181 100644
+--- a/src/backends/x11/meta-monitor-manager-xrandr.c
++++ b/src/backends/x11/meta-monitor-manager-xrandr.c
+@@ -348,7 +348,7 @@ output_get_backlight_limits_xrandr (MetaMonitorManagerXrandr *manager_xrandr,
+ {
+   Atom atom;
+   xcb_connection_t *xcb_conn;
+-  g_autofree xcb_randr_query_output_property_reply_t *reply;
++  g_autofree xcb_randr_query_output_property_reply_t *reply = NULL;
+ 
+   atom = XInternAtom (manager_xrandr->xdisplay, "Backlight", False);
+ 
+-- 
+2.9.3
+
+From bbed0d80453a680711358bdfb55235bfac3057e4 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20=C3=85dahl?= <jadahl@gmail.com>
+Date: Wed, 31 May 2017 17:24:07 +0800
+Subject: [PATCH 17/19] wayland/pointer: Use glib signals tracking focus
+ surface
+
+Use the "destroy" MetaWaylandSurface signal instead of the wl_resource
+destroy signal for tracking the lifetime of the surface with pointer
+focus.
+
+As unsetting the focus may have side effects due to handlers of the
+"focus-surface-changed" signal, connect the signal after the default
+handler to make sure other clean up facilities have the chance deal with
+the surface destruction before we try to unset the focus.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=783113
+---
+ src/wayland/meta-wayland-pointer.c | 28 +++++++++++++++-------------
+ src/wayland/meta-wayland-pointer.h |  2 +-
+ 2 files changed, 16 insertions(+), 14 deletions(-)
+
+diff --git a/src/wayland/meta-wayland-pointer.c b/src/wayland/meta-wayland-pointer.c
+index 4578f3e..7c05912 100644
+--- a/src/wayland/meta-wayland-pointer.c
++++ b/src/wayland/meta-wayland-pointer.c
+@@ -247,14 +247,6 @@ sync_focus_surface (MetaWaylandPointer *pointer)
+ }
+ 
+ static void
+-pointer_handle_focus_surface_destroy (struct wl_listener *listener, void *data)
+-{
+-  MetaWaylandPointer *pointer = wl_container_of (listener, pointer, focus_surface_listener);
+-
+-  meta_wayland_pointer_set_focus (pointer, NULL);
+-}
+-
+-static void
+ meta_wayland_pointer_send_frame (MetaWaylandPointer *pointer,
+ 				 struct wl_resource *resource)
+ {
+@@ -488,8 +480,6 @@ meta_wayland_pointer_enable (MetaWaylandPointer *pointer)
+     g_hash_table_new_full (NULL, NULL, NULL,
+                            (GDestroyNotify) meta_wayland_pointer_client_free);
+ 
+-  pointer->focus_surface_listener.notify = pointer_handle_focus_surface_destroy;
+-
+   pointer->cursor_surface = NULL;
+ 
+   manager = clutter_device_manager_get_default ();
+@@ -815,6 +805,13 @@ meta_wayland_pointer_broadcast_leave (MetaWaylandPointer *pointer,
+   meta_wayland_pointer_broadcast_frame (pointer);
+ }
+ 
++static void
++focus_surface_destroyed (MetaWaylandSurface *surface,
++                         MetaWaylandPointer *pointer)
++{
++  meta_wayland_pointer_set_focus (pointer, NULL);
++}
++
+ void
+ meta_wayland_pointer_set_focus (MetaWaylandPointer *pointer,
+                                 MetaWaylandSurface *surface)
+@@ -838,7 +835,9 @@ meta_wayland_pointer_set_focus (MetaWaylandPointer *pointer,
+           pointer->focus_client = NULL;
+         }
+ 
+-      wl_list_remove (&pointer->focus_surface_listener.link);
++      g_signal_handler_disconnect (pointer->focus_surface,
++                                   pointer->focus_surface_destroyed_handler_id);
++      pointer->focus_surface_destroyed_handler_id = 0;
+       pointer->focus_surface = NULL;
+     }
+ 
+@@ -848,8 +847,11 @@ meta_wayland_pointer_set_focus (MetaWaylandPointer *pointer,
+       ClutterPoint pos;
+ 
+       pointer->focus_surface = surface;
+-      wl_resource_add_destroy_listener (pointer->focus_surface->resource,
+-                                        &pointer->focus_surface_listener);
++
++      pointer->focus_surface_destroyed_handler_id =
++        g_signal_connect_after (pointer->focus_surface, "destroy",
++                                G_CALLBACK (focus_surface_destroyed),
++                                pointer);
+ 
+       clutter_input_device_get_coords (pointer->device, NULL, &pos);
+ 
+diff --git a/src/wayland/meta-wayland-pointer.h b/src/wayland/meta-wayland-pointer.h
+index 547cd56..9f55590 100644
+--- a/src/wayland/meta-wayland-pointer.h
++++ b/src/wayland/meta-wayland-pointer.h
+@@ -71,7 +71,7 @@ struct _MetaWaylandPointer
+   GHashTable *pointer_clients;
+ 
+   MetaWaylandSurface *focus_surface;
+-  struct wl_listener focus_surface_listener;
++  gulong focus_surface_destroyed_handler_id;
+   guint32 focus_serial;
+   guint32 click_serial;
+ 
+-- 
+2.9.3
+
+From 0f7c3f3678d3fa0a770daec34b522fc4a7346a6a Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonas=20=C3=85dahl?= <jadahl@gmail.com>
+Date: Wed, 31 May 2017 17:27:52 +0800
+Subject: [PATCH 18/19] wayland/pointer: Track lifetime of current surface
+
+Clear the pointer->current when the surface is destroyed.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=783113
+---
+ src/wayland/meta-wayland-pointer.c | 48 +++++++++++++++++++++++++++++++++++---
+ src/wayland/meta-wayland-pointer.h |  1 +
+ 2 files changed, 46 insertions(+), 3 deletions(-)
+
+diff --git a/src/wayland/meta-wayland-pointer.c b/src/wayland/meta-wayland-pointer.c
+index 7c05912..0cd2883 100644
+--- a/src/wayland/meta-wayland-pointer.c
++++ b/src/wayland/meta-wayland-pointer.c
+@@ -87,6 +87,10 @@ G_DEFINE_TYPE (MetaWaylandPointer, meta_wayland_pointer,
+                META_TYPE_WAYLAND_INPUT_DEVICE)
+ 
+ static void
++meta_wayland_pointer_set_current (MetaWaylandPointer *pointer,
++                                  MetaWaylandSurface *surface);
++
++static void
+ meta_wayland_pointer_reset_grab (MetaWaylandPointer *pointer);
+ 
+ static void
+@@ -510,6 +514,7 @@ meta_wayland_pointer_disable (MetaWaylandPointer *pointer)
+   meta_wayland_pointer_cancel_grab (pointer);
+   meta_wayland_pointer_reset_grab (pointer);
+   meta_wayland_pointer_set_focus (pointer, NULL);
++  meta_wayland_pointer_set_current (pointer, NULL);
+ 
+   g_clear_pointer (&pointer->pointer_clients, g_hash_table_unref);
+   pointer->cursor_surface = NULL;
+@@ -538,10 +543,39 @@ count_buttons (const ClutterEvent *event)
+ }
+ 
+ static void
++current_surface_destroyed (MetaWaylandSurface *surface,
++                           MetaWaylandPointer *pointer)
++{
++  meta_wayland_pointer_set_current (pointer, NULL);
++}
++
++static void
++meta_wayland_pointer_set_current (MetaWaylandPointer *pointer,
++                                  MetaWaylandSurface *surface)
++{
++  if (pointer->current)
++    {
++      g_signal_handler_disconnect (pointer->current,
++                                   pointer->current_surface_destroyed_handler_id);
++      pointer->current = NULL;
++    }
++
++  if (surface)
++    {
++      pointer->current = surface;
++      pointer->current_surface_destroyed_handler_id =
++        g_signal_connect (surface, "destroy",
++                          G_CALLBACK (current_surface_destroyed),
++                          pointer);
++    }
++}
++
++static void
+ repick_for_event (MetaWaylandPointer *pointer,
+                   const ClutterEvent *for_event)
+ {
+   ClutterActor *actor;
++  MetaWaylandSurface *surface;
+ 
+   if (for_event)
+     actor = clutter_event_get_source (for_event);
+@@ -549,10 +583,18 @@ repick_for_event (MetaWaylandPointer *pointer,
+     actor = clutter_input_device_get_pointer_actor (pointer->device);
+ 
+   if (META_IS_SURFACE_ACTOR_WAYLAND (actor))
+-    pointer->current =
+-      meta_surface_actor_wayland_get_surface (META_SURFACE_ACTOR_WAYLAND (actor));
++    {
++      MetaSurfaceActorWayland *actor_wayland =
++        META_SURFACE_ACTOR_WAYLAND (actor);
++
++      surface = meta_surface_actor_wayland_get_surface (actor_wayland);
++    }
+   else
+-    pointer->current = NULL;
++    {
++      surface = NULL;
++    }
++
++  meta_wayland_pointer_set_current (pointer, surface);
+ 
+   sync_focus_surface (pointer);
+   meta_wayland_pointer_update_cursor_surface (pointer);
+diff --git a/src/wayland/meta-wayland-pointer.h b/src/wayland/meta-wayland-pointer.h
+index 9f55590..87bc8c7 100644
+--- a/src/wayland/meta-wayland-pointer.h
++++ b/src/wayland/meta-wayland-pointer.h
+@@ -87,6 +87,7 @@ struct _MetaWaylandPointer
+ 
+   ClutterInputDevice *device;
+   MetaWaylandSurface *current;
++  gulong current_surface_destroyed_handler_id;
+ 
+   guint32 button_count;
+ };
+-- 
+2.9.3
+
+From e22c75377b4bb0be0bc21ed7a1f2f017672edbfe Mon Sep 17 00:00:00 2001
+From: mitchmindtree <mitchell.nordine@gmail.com>
+Date: Fri, 2 Jun 2017 14:41:56 +1000
+Subject: [PATCH 19/19] wayland/pointer: Check for subsurfaces when grabbing
+
+Previously, the function only returned `TRUE` if the given surface was
+equal to the given pointer's focused surface. This changes the behaviour
+to also return `TRUE` if any of the given surface's subsurfaces are
+equal to the pointer's focused surface.
+
+https://bugzilla.gnome.org/show_bug.cgi?id=781811
+---
+ src/wayland/meta-wayland-pointer.c | 22 +++++++++++++++++++++-
+ 1 file changed, 21 insertions(+), 1 deletion(-)
+
+diff --git a/src/wayland/meta-wayland-pointer.c b/src/wayland/meta-wayland-pointer.c
+index 0cd2883..15e27cd 100644
+--- a/src/wayland/meta-wayland-pointer.c
++++ b/src/wayland/meta-wayland-pointer.c
+@@ -1162,13 +1162,33 @@ meta_wayland_pointer_create_new_resource (MetaWaylandPointer *pointer,
+     }
+ }
+ 
++static gboolean
++pointer_can_grab_surface (MetaWaylandPointer *pointer,
++                          MetaWaylandSurface *surface)
++{
++  GList *l;
++
++  if (pointer->focus_surface == surface)
++    return TRUE;
++
++  for (l = surface->subsurfaces; l; l = l->next)
++    {
++      MetaWaylandSurface *subsurface = l->data;
++
++      if (pointer_can_grab_surface (pointer, subsurface))
++        return TRUE;
++    }
++
++  return FALSE;
++}
++
+ gboolean
+ meta_wayland_pointer_can_grab_surface (MetaWaylandPointer *pointer,
+                                        MetaWaylandSurface *surface,
+                                        uint32_t            serial)
+ {
+   return (pointer->grab_serial == serial &&
+-          pointer->focus_surface == surface);
++          pointer_can_grab_surface (pointer, surface));
+ }
+ 
+ gboolean
+-- 
+2.9.3
+
