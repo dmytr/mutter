@@ -4,8 +4,8 @@
 %global libinput_version 1.4
 
 Name:          mutter
-Version:       3.24.3
-Release:       2%{?dist}
+Version:       3.24.4
+Release:       1%{?dist}
 Summary:       Window and compositing manager based on Clutter
 
 License:       GPLv2+
@@ -14,7 +14,6 @@ URL:           http://www.gnome.org
 Source0:       http://download.gnome.org/sources/%{name}/3.24/%{name}-%{version}.tar.xz
 
 Patch0:        startup-notification.patch
-Patch1:        0001-window-Don-t-crash-when-moving-across-non-adjecent-l.patch
 
 BuildRequires: chrpath
 BuildRequires: pango-devel
@@ -109,7 +108,6 @@ the functionality of the installed %{name} package.
 %prep
 %setup -q
 %patch0 -p1
-%patch1 -p1
 
 %build
 autoreconf -f -i
@@ -182,6 +180,9 @@ glib-compile-schemas %{_datadir}/glib-2.0/schemas &> /dev/null || :
 %{_datadir}/mutter/tests
 
 %changelog
+* Wed Jul 19 2017 Florian Müllner <fmuellner@redhat.com> - 3.24.4-1
+- Update to 3.24.4
+
 * Wed Jul 12 2017 Florian Müllner <fmuellner@redhat.com> - 3.24.3-2
 - Don't crash when moving between non-adjacent monitors
 
