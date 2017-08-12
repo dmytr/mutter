@@ -7,7 +7,7 @@
 
 Name:          mutter
 Version:       3.26.2
-Release:       1%{?dist}
+Release:       1%{?dist}.dmytr
 Summary:       Window and compositing manager based on Clutter
 
 License:       GPLv2+
@@ -16,6 +16,7 @@ URL:           http://www.gnome.org
 Source0:       http://download.gnome.org/sources/%{name}/3.26/%{name}-%{version}.tar.xz
 
 Patch0:        startup-notification.patch
+Patch1:        0001-Use-LMR-tap-button-map.patch
 
 BuildRequires: chrpath
 BuildRequires: pango-devel

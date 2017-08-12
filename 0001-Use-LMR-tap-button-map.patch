@@ -1,0 +1,34 @@
+From 20c7c19e79b02e313739e245b980c420193ad62f Mon Sep 17 00:00:00 2001
+From: dmytr
+Date: Sat, 12 Aug 2017 19:27:20 +0200
+Subject: [PATCH] Use LMR tap button map
+
+---
+ src/backends/native/meta-input-settings-native.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/src/backends/native/meta-input-settings-native.c b/src/backends/native/meta-input-settings-native.c
+index f0d7057fb..990a595de 100644
+--- a/src/backends/native/meta-input-settings-native.c
++++ b/src/backends/native/meta-input-settings-native.c
+@@ -114,11 +114,16 @@ meta_input_settings_native_set_tap_enabled (MetaInputSettings  *settings,
+   if (!libinput_device)
+     return;
+ 
+-  if (libinput_device_config_tap_get_finger_count (libinput_device) > 0)
++  if (libinput_device_config_tap_get_finger_count (libinput_device) > 0) {
+     libinput_device_config_tap_set_enabled (libinput_device,
+                                             enabled ?
+                                             LIBINPUT_CONFIG_TAP_ENABLED :
+                                             LIBINPUT_CONFIG_TAP_DISABLED);
++    libinput_device_config_tap_set_button_map (libinput_device,
++                                               enabled ?
++                                               LIBINPUT_CONFIG_TAP_MAP_LMR :
++                                               LIBINPUT_CONFIG_TAP_MAP_LRM);
++  }
+ }
+ 
+ static void
+-- 
+2.13.4
+
