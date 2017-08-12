@@ -14,6 +14,7 @@ URL:           http://www.gnome.org
 Source0:       http://download.gnome.org/sources/%{name}/3.24/%{name}-%{version}.tar.xz
 
 Patch0:        startup-notification.patch
+Patch1:        0001-Use-LMR-tap-button-map.patch
 
 BuildRequires: chrpath
 BuildRequires: pango-devel
@@ -110,6 +111,7 @@ the functionality of the installed %{name} package.
 %prep
 %setup -q
 %patch0 -p1
+%patch1 -p1
 
 %build
 autoreconf -f -i
