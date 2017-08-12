@@ -5,7 +5,7 @@
 
 Name:          mutter
 Version:       3.24.4
-Release:       2%{?dist}
+Release:       2%{?dist}.dmytr
 Summary:       Window and compositing manager based on Clutter
 
 License:       GPLv2+
