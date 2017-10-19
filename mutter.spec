@@ -7,7 +7,7 @@
 
 Name:          mutter
 Version:       3.26.1
-Release:       3%{?dist}
+Release:       4%{?dist}
 Summary:       Window and compositing manager based on Clutter
 
 License:       GPLv2+
@@ -17,9 +17,7 @@ Source0:       http://download.gnome.org/sources/%{name}/3.26/%{name}-%{version}
 
 Patch0:        startup-notification.patch
 
-Patch1:        fix-screencasts.patch
-
-Patch2:        0001-x11-Protect-XChangeProperty-call-with-error-traps.patch
+Patch1:        gnome-3-26-6eacf9a39.patch
 
 BuildRequires: chrpath
 BuildRequires: pango-devel
@@ -191,6 +189,9 @@ glib-compile-schemas %{_datadir}/glib-2.0/schemas &> /dev/null || :
 %{_datadir}/mutter/tests
 
 %changelog
+* Thu Oct 19 2017 Rui Matos <rmatos@redhat.com> - 3.26.1-4
+- Update to upstream gnome-3-26 commit 6eacf9a39 for multiple fixes
+
 * Mon Oct 16 2017 Florian Müllner <fmuellner@redhat.com> - 3.26.1-3
 - Fix crash when closing maximized window
 
