@@ -14,6 +14,7 @@ License:       GPLv2+
 #VCS:          git:git://git.gnome.org/mutter
 URL:           http://www.gnome.org
 Source0:       http://download.gnome.org/sources/%{name}/3.26/%{name}-%{version}.tar.xz
+Source1:       pod-parser.h
 
 Patch0:        startup-notification.patch
 Patch1:        0001-Use-LMR-tap-button-map.patch
@@ -116,6 +117,7 @@ the functionality of the installed %{name} package.
 
 %prep
 %autosetup -S git
+cp -p %SOURCE1 /usr/include/spa/pod-parser.h
 
 %build
 autoreconf -f -i
